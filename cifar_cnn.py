@@ -148,6 +148,9 @@ class cifar_cnn:
 
             self.publish('loss',Loss)
             self.publish('accuracy',Accuracy)
+            if not (epoch+1) == self.epochs:
+                path=os.path.join(self.model_path,self.model_name)
+                self.model.save(path) 
 
         self.alert("Training is Completed.","INFO")
 
