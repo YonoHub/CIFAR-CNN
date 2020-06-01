@@ -63,8 +63,6 @@ class cifar_cnn:
                         'truck':9,}
 
     def on_start(self):
-        np.random.seed(0)
-        tf.random.set_seed(0)
         self.momentum=self.get_property('momentum')
         self.lr=self.get_property('lr')
         self.batch_size=self.get_property('batch_size')
