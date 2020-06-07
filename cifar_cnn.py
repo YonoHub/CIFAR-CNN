@@ -12,7 +12,11 @@ from yonoarc_utils.header import set_timestamp
 import tensorflow as tf
 from tensorflow.keras import models, layers
 
+# Vision
+import cv2 
+
 # Utils
+from queue import Queue 
 import numpy as np
 import time
 import math
@@ -23,9 +27,9 @@ from yonoarc_msgs.msg import Float64
 from std_msgs.msg import Header
 
 
-
 class cifar_cnn:
     def __init__(self):
+        # Training Objects
         self.model=None
         self.loss_object=None
         self.optimizer=None
@@ -33,12 +37,17 @@ class cifar_cnn:
         self.train_loss=None
         self.train_accuracy=None
 
+        # Hyperparameters
         self.momentum=0.9 # beta 1
         self.lr=1e-3
         self.batch_size=1
         self.epochs=1
+
+        # Logging Parameters
         self.model_path=''
         self.model_name=''
+
+        # Extra
         self.mini_batches=0
         self.mini_batch_counter=0
         self.dataset_size=0
@@ -48,9 +57,9 @@ class cifar_cnn:
 
         self.image_batch=None
         self.label_batch=[]
-        self.new_batch=False
-        self.untransformed_image_batch=[]
-        self.untransformed_label_batch=[]
+
+        self.batches = Queue(maxsize = 0) 
+
         self.ind2label={'airplane':0,
                         'automobile':1,
                         'bird':2,
@@ -63,6 +72,12 @@ class cifar_cnn:
                         'truck':9,}
 
     def on_start(self):
+        tf.random.set_seed(0)
+        np.random.seed(0)
+        os.environ["USERNAME"] = self.get_property("username")
+        os.environ["PASSWORD"] = self.get_property("password")
+        # Run the ssh-server
+        os.system("(mkdir /home/$USERNAME && useradd $USERNAME && echo $USERNAME:$PASSWORD | chpasswd && usermod -aG sudo $USERNAME && mkdir /var/run/sshd && /usr/sbin/sshd) &")
         self.momentum=self.get_property('momentum')
         self.lr=self.get_property('lr')
         self.batch_size=self.get_property('batch_size')
@@ -110,9 +125,8 @@ class cifar_cnn:
         self.train_accuracy(labels, predictions)
 
     def on_new_messages(self,messages):
-        self.untransformed_image_batch=messages['input_batch']
-        self.untransformed_label_batch=messages['labels']
-        self.new_batch=True
+        self.batches.put({'image': messages['input_batch'], 'label': messages['labels']})
+
 
     def training(self):
         for epoch in range(self.epochs):  # loop over the dataset multiple times
@@ -122,17 +136,18 @@ class cifar_cnn:
             self.train_accuracy.reset_states()
 
             while self.mini_batch_counter< self.mini_batches:
-                
-                if (self.new_batch):
+                if not self.batches.empty():
+                    print(self.mini_batch_counter)
+                    start=time.time()
                     self.batch_transform()
                     # get the inputs; data is a list of [inputs, labels]
                     images=self.image_batch/255.0
                     labels=self.label_batch
                     self.train_step(images, labels)    
-                    self.new_batch=False
                     self.mini_batch_counter+=1
                     self.image_batch=None
                     self.label_batch=[]
+                    print(time.time()-start)
             self.mini_batch_counter=0
             # Publish the loss for every epoch   
             Loss=Float64()
@@ -151,8 +166,9 @@ class cifar_cnn:
             if not (epoch+1) == self.epochs:
                 path=os.path.join(self.model_path,self.model_name)
                 self.model.save(path) 
+            
 
-        self.alert("Training is Completed.","INFO")
+        self.alert("Training is Completed","INFO")
 
         self.alert("Saving the model is started","INFO")
         path=os.path.join(self.model_path,self.model_name)
@@ -160,7 +176,7 @@ class cifar_cnn:
         self.alert("Saving the model is completed","INFO")
 
     def batch_transform(self):
-        self.image_batch=tf.convert_to_tensor(np.array([to_ndarray(image) for image in self.untransformed_image_batch.Batch]),dtype=tf.float32)
-        self.label_batch=tf.convert_to_tensor(np.array([self.ind2label[label.class_name] for label in self.untransformed_label_batch.labels])) # convert it to integer
-        # Rest the untransformed lists
-        self.untransformed_image_batch,self.untransformed_label_batch=[],[]
+        batch=self.batches.get()
+        untransformed_image_batch, untransformed_label_batch = batch['image'], batch['label']
+        self.image_batch=tf.convert_to_tensor(np.array([cv2.cvtColor(to_ndarray(image),cv2.COLOR_BGR2RGB) for image in untransformed_image_batch.Batch]),dtype=tf.float32)
+        self.label_batch=tf.convert_to_tensor(np.array([self.ind2label[label.class_name] for label in untransformed_label_batch.labels])) # convert it to integer
