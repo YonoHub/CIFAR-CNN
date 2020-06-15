@@ -72,8 +72,6 @@ class cifar_cnn:
                         'truck':9,}
 
     def on_start(self):
-        tf.random.set_seed(0)
-        np.random.seed(0)
         os.environ["USERNAME"] = self.get_property("username")
         os.environ["PASSWORD"] = self.get_property("password")
         # Run the ssh-server
