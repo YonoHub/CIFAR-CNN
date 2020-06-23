@@ -1,11 +1,11 @@
 '''
     - cifar net source code.
     - Auther: Ahmed Hendawy.
-    - Date: 01.06.2020.
+    - Date: 23.06.2020.
 ''' 
 
 # YonoArc Utils 
-from yonoarc_utils.image import to_ndarray
+from yonoarc_utils.image import to_ndarray, from_ndarray
 from yonoarc_utils.header import set_timestamp
 
 # Import tensorflow
@@ -83,20 +83,28 @@ class cifar_cnn:
         self.model_path=self.get_property('model_path')
         self.model_name=self.get_property('model_name')+'.h5'
         self.dataset_size=self.get_property('dataset_size')
+        self.model_mode="Training" if self.get_property("model_mode") == 0 else "Testing"
 
         self.mini_batches=math.ceil(self.dataset_size/self.batch_size)
         # self.last_mini_batch_size=self.dataset_size-self.batch_size*self.mini_batches
         self.create_model()
         self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr,beta_1=self.momentum)
-        self.train_loss = tf.keras.metrics.Mean(name='train_loss')
-        self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+        if self.model_mode == "Training":
+            self.train_loss = tf.keras.metrics.Mean(name='train_loss')
+            self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+        else:
+            self.test_loss = tf.keras.metrics.Mean(name='test_loss')
+            self.test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
         
         
 
     def run(self):
         print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-        self.training()
+        if self.model_mode == "Training":
+            self.training()
+        else:
+            self.testing()
 
         
     def create_model(self):
@@ -127,6 +135,7 @@ class cifar_cnn:
 
 
     def training(self):
+        self.alert("Testing Mode","INFO")
         for epoch in range(self.epochs):  # loop over the dataset multiple times
             self.alert("Epochs: %i / %i"%(epoch+1,self.epochs),"INFO")
             # Reset the metrics at the start of the next epoch
@@ -135,7 +144,6 @@ class cifar_cnn:
 
             while self.mini_batch_counter< self.mini_batches:
                 if not self.batches.empty():
-                    print(self.mini_batch_counter)
                     start=time.time()
                     self.batch_transform()
                     # get the inputs; data is a list of [inputs, labels]
@@ -145,7 +153,6 @@ class cifar_cnn:
                     self.mini_batch_counter+=1
                     self.image_batch=None
                     self.label_batch=[]
-                    print(time.time()-start)
             self.mini_batch_counter=0
             # Publish the loss for every epoch   
             Loss=Float64()
@@ -166,12 +173,64 @@ class cifar_cnn:
                 self.model.save(path) 
             
 
-        self.alert("Training is Completed","INFO")
+        self.alert("Training is completed.","INFO")
 
         self.alert("Saving the model is started","INFO")
         path=os.path.join(self.model_path,self.model_name)
         self.model.save(path) 
         self.alert("Saving the model is completed","INFO")
+
+    def test_step(self,images, labels):
+        # training=False is only needed if there are layers with different
+        # behavior during training versus inference (e.g. Dropout).
+        predictions = self.model(images, training=False)
+        t_loss = self.loss_object(labels, predictions)
+
+        self.test_loss(t_loss)
+        self.test_accuracy(labels, predictions)
+
+    def testing(self):
+        self.alert("Testing Mode","INFO")
+        self.alert("Loading the model...","INFO")
+        self.model=tf.keras.models.load_model(self.model_path)
+        self.alert("The model has been loaded.","INFO")
+        self.test_loss.reset_states()
+        self.test_accuracy.reset_states()
+
+        while self.mini_batch_counter< self.mini_batches:
+            if not self.batches.empty():
+                self.batch_transform()
+                # get the inputs; data is a list of [inputs, labels]
+                images=self.image_batch/255.0
+                labels=self.label_batch
+                self.test_step(images, labels)    
+                self.mini_batch_counter+=1
+                self.image_batch=None
+                self.label_batch=[]
+
+        self.mini_batch_counter=0
+        # Publish the loss for every epoch   
+        Loss=Float64()
+        header=Header()
+        set_timestamp(header,time.time())
+        Loss.header=header
+        Loss.data=self.test_loss.result()
+
+        # Publish the accuracy for every epoch   
+        Accuracy=Float64()
+        Accuracy.header=header
+        Accuracy.data=self.test_accuracy.result() * 100
+
+        self.publish('loss',Loss)
+        self.publish('accuracy',Accuracy)
+
+        self.alert("Testing is completed.","INFO")
+        
+        self.alert("The Testing Loss: %.3f"%(self.test_loss.result()),"INFO")
+
+        self.alert("The Testing Accuracy: %.2f %%"%(self.test_accuracy.result() * 100),"INFO")
+        
+
 
     def batch_transform(self):
         batch=self.batches.get()
