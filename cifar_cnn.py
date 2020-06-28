@@ -27,10 +27,6 @@ import datetime
 from yonoarc_msgs.msg import Float64
 from std_msgs.msg import Header
 
-def launchTensorBoard(tensorBoardPath):
-    os.system('tensorboard --logdir ' + tensorBoardPath)
-    return
-
 
 class cifar_cnn:
     def __init__(self):
@@ -107,12 +103,8 @@ class cifar_cnn:
         self.log_dir =os.path.join(self.tensorboard_dir,datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),("train" if self.model_mode == "Training" else "test"))
         self.writer = tf.summary.create_file_writer(self.log_dir)
 
-        import threading
-        t = threading.Thread(target=launchTensorBoard, args=(["%s --port 6006 --host 0.0.0.0"%self.tensorboard_dir]))
-        t.start()
-
-        
-        
+        import subprocess
+        subprocess.Popen("tensorboard --logdir {} --port 6006 --host 0.0.0.0".format(self.tensorboard_dir), shell=True)
 
     def run(self):
         print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
