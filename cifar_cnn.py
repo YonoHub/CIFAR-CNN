@@ -150,55 +150,56 @@ class cifar_cnn:
 
 
     def training(self):
-        with self.writer.as_default():
-            self.alert("Training Mode","INFO")
-            for epoch in range(self.epochs):  # loop over the dataset multiple times
-                self.alert("Epochs: %i / %i"%(epoch+1,self.epochs),"INFO")
-                # Reset the metrics at the start of the next epoch
-                self.train_loss.reset_states()
-                self.train_accuracy.reset_states()
+        
+        self.alert("Training Mode","INFO")
+        for epoch in range(self.epochs):  # loop over the dataset multiple times
+            self.alert("Epochs: %i / %i"%(epoch+1,self.epochs),"INFO")
+            # Reset the metrics at the start of the next epoch
+            self.train_loss.reset_states()
+            self.train_accuracy.reset_states()
 
-                while self.mini_batch_counter< self.mini_batches:
-                    if not self.batches.empty():
-                        start=time.time()
-                        self.batch_transform()
-                        # get the inputs; data is a list of [inputs, labels]
-                        images=self.image_batch/255.0
-                        labels=self.label_batch
-                        self.train_step(images, labels)    
-                        self.mini_batch_counter+=1
-                        self.image_batch=None
-                        self.label_batch=[]
-                self.mini_batch_counter=0
-                # Publish the loss for every epoch   
-                Loss=Float64()
-                header=Header()
-                set_timestamp(header,time.time())
-                Loss.header=header
-                Loss.data=self.train_loss.result()
+            while self.mini_batch_counter< self.mini_batches:
+                if not self.batches.empty():
+                    start=time.time()
+                    self.batch_transform()
+                    # get the inputs; data is a list of [inputs, labels]
+                    images=self.image_batch/255.0
+                    labels=self.label_batch
+                    self.train_step(images, labels)    
+                    self.mini_batch_counter+=1
+                    self.image_batch=None
+                    self.label_batch=[]
+            self.mini_batch_counter=0
+            # Publish the loss for every epoch   
+            Loss=Float64()
+            header=Header()
+            set_timestamp(header,time.time())
+            Loss.header=header
+            Loss.data=self.train_loss.result()
 
-                # Publish the accuracy for every epoch   
-                Accuracy=Float64()
-                Accuracy.header=header
-                Accuracy.data=self.train_accuracy.result() * 100
+            # Publish the accuracy for every epoch   
+            Accuracy=Float64()
+            Accuracy.header=header
+            Accuracy.data=self.train_accuracy.result() * 100
 
+            self.publish('loss',Loss)
+            self.publish('accuracy',Accuracy)
+
+            with self.writer.as_default():
                 tf.summary.scalar("epoch_loss", self.train_loss.result(), step=(epoch+1))
                 tf.summary.scalar("epoch_accuarcy", self.train_accuracy.result() * 100, step=(epoch+1))
-                self.writer.flush()
-
-                self.publish('loss',Loss)
-                self.publish('accuracy',Accuracy)
-                if not (epoch+1) == self.epochs:
-                    path=os.path.join(self.model_path,self.model_name)
-                    self.model.save(path) 
                 
+            if not (epoch+1) == self.epochs:
+                path=os.path.join(self.model_path,self.model_name)
+                self.model.save(path) 
+            
 
-            self.alert("Training is completed.","INFO")
+        self.alert("Training is completed.","INFO")
 
-            self.alert("Saving the model is started","INFO")
-            path=os.path.join(self.model_path,self.model_name)
-            self.model.save(path) 
-            self.alert("Saving the model is completed","INFO")
+        self.alert("Saving the model is started","INFO")
+        path=os.path.join(self.model_path,self.model_name)
+        self.model.save(path) 
+        self.alert("Saving the model is completed","INFO")
 
     def test_step(self,images, labels):
         # training=False is only needed if there are layers with different
@@ -210,50 +211,49 @@ class cifar_cnn:
         self.test_accuracy(labels, predictions)
 
     def testing(self):
+        
+        self.alert("Testing Mode","INFO")
+        self.alert("Loading the model...","INFO")
+        self.model=tf.keras.models.load_model(self.model_path)
+        self.alert("The model has been loaded.","INFO")
+        self.test_loss.reset_states()
+        self.test_accuracy.reset_states()
+
+        while self.mini_batch_counter< self.mini_batches:
+            if not self.batches.empty():
+                self.batch_transform()
+                # get the inputs; data is a list of [inputs, labels]
+                images=self.image_batch/255.0
+                labels=self.label_batch
+                self.test_step(images, labels)    
+                self.mini_batch_counter+=1
+                self.image_batch=None
+                self.label_batch=[]
+
+        self.mini_batch_counter=0
+        # Publish the loss for every epoch   
+        Loss=Float64()
+        header=Header()
+        set_timestamp(header,time.time())
+        Loss.header=header
+        Loss.data=self.test_loss.result()
+
+        # Publish the accuracy for every epoch   
+        Accuracy=Float64()
+        Accuracy.header=header
+        Accuracy.data=self.test_accuracy.result() * 100
+
+        self.publish('loss',Loss)
+        self.publish('accuracy',Accuracy)
         with self.writer.as_default():
-            self.alert("Testing Mode","INFO")
-            self.alert("Loading the model...","INFO")
-            self.model=tf.keras.models.load_model(self.model_path)
-            self.alert("The model has been loaded.","INFO")
-            self.test_loss.reset_states()
-            self.test_accuracy.reset_states()
-
-            while self.mini_batch_counter< self.mini_batches:
-                if not self.batches.empty():
-                    self.batch_transform()
-                    # get the inputs; data is a list of [inputs, labels]
-                    images=self.image_batch/255.0
-                    labels=self.label_batch
-                    self.test_step(images, labels)    
-                    self.mini_batch_counter+=1
-                    self.image_batch=None
-                    self.label_batch=[]
-
-            self.mini_batch_counter=0
-            # Publish the loss for every epoch   
-            Loss=Float64()
-            header=Header()
-            set_timestamp(header,time.time())
-            Loss.header=header
-            Loss.data=self.test_loss.result()
-
-            # Publish the accuracy for every epoch   
-            Accuracy=Float64()
-            Accuracy.header=header
-            Accuracy.data=self.test_accuracy.result() * 100
-
-            self.publish('loss',Loss)
-            self.publish('accuracy',Accuracy)
-
             tf.summary.scalar("epoch_loss", self.test_loss.result(), step=(epoch+1))
             tf.summary.scalar("epoch_accuarcy", self.test_accuracy.result() * 100, step=(epoch+1))
-            self.writer.flush()
 
-            self.alert("Testing is completed.","INFO")
-            
-            self.alert("The Testing Loss: %.3f"%(self.test_loss.result()),"INFO")
+        self.alert("Testing is completed.","INFO")
+        
+        self.alert("The Testing Loss: %.3f"%(self.test_loss.result()),"INFO")
 
-            self.alert("The Testing Accuracy: %.2f %%"%(self.test_accuracy.result() * 100),"INFO")
+        self.alert("The Testing Accuracy: %.2f %%"%(self.test_accuracy.result() * 100),"INFO")
         
 
 
